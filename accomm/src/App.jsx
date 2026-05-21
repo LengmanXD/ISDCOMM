@@ -33,6 +33,16 @@ function deleteProject(id) {
   } catch {}
 }
 
+function createShareCode(data) {
+  const json = JSON.stringify(data);
+  return btoa(encodeURIComponent(json));
+}
+
+function parseShareCode(code) {
+  const json = decodeURIComponent(atob(code));
+  return JSON.parse(json);
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 const DOOR_TEST_OPTIONS = ["PASS", "FAIL", "N/A"];
 
@@ -237,6 +247,14 @@ const css = `
   .picker-close { display: flex; align-items: center; justify-content: center; width: 100%; padding: 12px; background: none; border: none; color: var(--muted); font-family: var(--font-mono); font-size: 13px; cursor: pointer; margin-top: 4px; }
 
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #000; padding: 10px 20px; border-radius: 8px; font-weight: 500; font-size: 13px; z-index: 999; animation: fadeup 0.3s ease; pointer-events: none; }
+  .modal-textarea { width: 100%; min-height: 140px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: var(--font-mono); font-size: 12px; padding: 12px; resize: vertical; }
+  .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .modal-actions button { flex: 1; }
+  .export-btn, .share-btn, .import-btn { background: var(--accent); color: #000; border: none; border-radius: 6px; padding: 8px 14px; font-family: var(--font-mono); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .menu-dropdown { position: absolute; right: 0; top: 40px; width: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 34px rgba(0,0,0,0.35); padding: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 250; }
+  .menu-item { background: none; border: none; text-align: left; padding: 10px 12px; border-radius: 10px; color: var(--text); font-family: var(--font-mono); font-size: 12px; cursor: pointer; transition: background 0.15s; }
+  .menu-item:hover { background: rgba(229,156,0,0.12); }
+  .export-btn:active, .share-btn:active, .import-btn:active, .menu-item:active { opacity: 0.8; }
   @keyframes fadeup { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 `;
 
@@ -420,6 +438,11 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [saveStatus, setSaveStatus] = useState("saved");
   const [showPicker, setShowPicker] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [shareCode, setShareCode] = useState("");
+  const [importCode, setImportCode] = useState("");
   const [projectId, setProjectId] = useState(() => uid());
 
   const [project, setProject] = useState(() => {
@@ -515,6 +538,28 @@ export default function App() {
     setTimeout(() => { isLoading.current = false; }, 100);
   };
 
+  const handleImportProject = () => {
+    try {
+      const payload = parseShareCode(importCode.trim());
+      if (!payload || !payload.project || !Array.isArray(payload.doors) || !Array.isArray(payload.cctvs)) throw new Error();
+      const newId = uid();
+      const importedProject = payload.project || blankProjectData().project;
+      const importedDoors = payload.doors.length ? payload.doors : [blankDoor()];
+      const importedCctvs = payload.cctvs.length ? payload.cctvs : [blankCCTV()];
+      setProjectId(newId);
+      setProject(importedProject);
+      setDoors(importedDoors);
+      setCctvs(importedCctvs);
+      saveProject(newId, { project: importedProject, doors: importedDoors, cctvs: importedCctvs });
+      setShowImportModal(false);
+      setImportCode("");
+      setTab("project");
+      showToast("Project imported");
+    } catch (err) {
+      showToast("Invalid share code");
+    }
+  };
+
   const TABS = [
     { id: "project", label: "Project" },
     { id: "doors", label: "Doors", count: doors.length },
@@ -537,7 +582,29 @@ export default function App() {
                 {saveStatus === "saving" ? "Saving…" : project.name || "New Project"}
               </div>
             </div>
-            <button className="export-btn" onClick={handleExport}>⬇ XLSX</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
+              <button className="export-btn" onClick={() => setShowMenu(prev => !prev)}>⋯ Actions</button>
+              {showMenu && (
+                <div className="menu-dropdown">
+                  <button className="menu-item" onClick={() => {
+                    setShowMenu(false);
+                    const code = createShareCode({ project, doors, cctvs, sharedAt: Date.now() });
+                    setShareCode(code);
+                    setShowShareModal(true);
+                    navigator.clipboard?.writeText(code).then(() => showToast("Share code copied"), () => showToast("Share code ready"));
+                  }}>🔗 Share project</button>
+                  <button className="menu-item" onClick={() => {
+                    setShowMenu(false);
+                    setImportCode("");
+                    setShowImportModal(true);
+                  }}>📥 Import project</button>
+                  <button className="menu-item" onClick={() => {
+                    setShowMenu(false);
+                    handleExport();
+                  }}>⬇ Export XLSX</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -563,7 +630,7 @@ export default function App() {
                   <Field label="Site Address"><input value={project.address} onChange={pf("address")} placeholder="Full site address" /></Field>
                   <div className="field-row">
                     <Field label="Client"><input value={project.client} onChange={pf("client")} /></Field>
-                    <Field label="Opportunity No."><input value={project.oppNo} onChange={pf("oppNo")} /></Field>
+                    <Field label="Opportunity No."><input value={project.contractNo} onChange={pf("contractNo")} /></Field>
                   </div>
                   <Field label="Engineer(s)"><input value={project.engineers} onChange={pf("engineers")} placeholder="Names of commissioning engineers" /></Field>
                   <div className="field-row">
@@ -602,6 +669,36 @@ export default function App() {
 
       {showPicker && (
         <ProjectPicker currentId={projectId} onSelect={handleSelectProject} onNew={handleNewProject} onClose={() => setShowPicker(false)} />
+      )}
+
+      {showShareModal && (
+        <div className="picker-overlay" onClick={() => setShowShareModal(false)}>
+          <div className="picker-sheet" onClick={e => e.stopPropagation()}>
+            <div className="picker-title">Share Project</div>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>Copy this share code or send it to someone else.</div>
+            <textarea className="modal-textarea" readOnly value={shareCode} />
+            <div className="modal-actions">
+              <button className="new-proj-btn" onClick={() => {
+                navigator.clipboard?.writeText(shareCode).then(() => showToast("Share code copied"), () => showToast("Share code ready"));
+              }}>Copy again</button>
+              <button className="picker-close" onClick={() => setShowShareModal(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="picker-overlay" onClick={() => setShowImportModal(false)}>
+          <div className="picker-sheet" onClick={e => e.stopPropagation()}>
+            <div className="picker-title">Import Project</div>
+            <div style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12 }}>Paste a shared project code below.</div>
+            <textarea className="modal-textarea" value={importCode} onChange={e => setImportCode(e.target.value)} placeholder="Paste share code here" />
+            <div className="modal-actions">
+              <button className="new-proj-btn" onClick={handleImportProject}>Import</button>
+              <button className="picker-close" onClick={() => setShowImportModal(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}
