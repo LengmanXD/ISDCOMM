@@ -61,7 +61,7 @@ function exportToExcel(project, doors, cctvs) {
   };
 
   addSheet("Project Info", [
-    ["ISD TECH COMMISSIONING ASSISTANT"],
+    ["COMMISSIONING ASSISTANT"],
     [],
     ["Project Name", project.name],
     ["Site Address", project.address],
@@ -144,7 +144,7 @@ const css = `
     --surface: #161820;
     --surface2: #1e2029;
     --border: #2a2d3a;
-    --accent: #e59c00;
+    --accent: #33dfba;
     --warn: #ffd166;
     --danger: #ef4444;
     --text: #e8eaf0;
@@ -574,7 +574,7 @@ export default function App() {
           <div className="header-top">
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="header-title">
-                ISD<span>TECH</span>
+                XD<span>LOL</span>
                 <button className="proj-switch-btn" onClick={() => setShowPicker(true)}>⇄ Projects</button>
               </div>
               <div className="project-name">
